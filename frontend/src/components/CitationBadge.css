@@ -1,0 +1,59 @@
+.citation-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.citation-label {
+  font-size: 0.85rem;
+  color: #8e8ea0;
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+.citation-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: rgba(16, 163, 127, 0.15);
+  border: 1px solid rgba(16, 163, 127, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+}
+
+.citation-badge:hover {
+  background: rgba(16, 163, 127, 0.25);
+  border-color: rgba(16, 163, 127, 0.5);
+  transform: translateY(-1px);
+}
+
+.citation-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.citation-filename {
+  color: #10a37f;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .citation-badges {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .citation-badge {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+

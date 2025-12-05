@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  app:
+    # Replace 'your-username' with your Docker Hub username
+    image: your-username/doc-intel:latest
+    container_name: doc-intel-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # n8n connection settings
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://host.docker.internal:5678}
+      - N8N_UPLOAD_WEBHOOK_ID=${N8N_UPLOAD_WEBHOOK_ID:-d5f0f619-e0b4-4e7b-a9f4-d5b84d978651}
+      - N8N_CHAT_WEBHOOK_ID=${N8N_CHAT_WEBHOOK_ID:-66219e80-fbed-4664-a11d-4a05167fbad2}
+      - N8N_CHAT_WEBHOOK_PATH=${N8N_CHAT_WEBHOOK_PATH:-}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-admin}
+      # App settings
+      - PORT=8000
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+

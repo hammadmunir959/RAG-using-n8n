@@ -1,0 +1,335 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "formTitle": "Document Upload",
+          "formDescription": "Upload PDF, CSV, or JSON files to add to the knowledge base",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "Upload Document",
+                "fieldType": "file",
+                "acceptFileTypes": ".pdf, .csv, .json",
+                "requiredField": true
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "ed5dc2a0-1066-4ee3-871c-9cfecd1c78a1",
+        "name": "File Upload Form",
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 2.3,
+        "position": [
+          -384,
+          640
+        ],
+        "webhookId": "d5f0f619-e0b4-4e7b-a9f4-d5b84d978651"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "id-1",
+                "name": "documentKey",
+                "value": "={{ $json[\"Upload_Document\"][\"fileName\"] }}",
+                "type": "string"
+              },
+              {
+                "id": "id-2",
+                "name": "uploadDate",
+                "value": "={{ $now.toISO() }}",
+                "type": "string"
+              },
+              {
+                "id": "id-3",
+                "name": "fileType",
+                "value": "={{ $json[\"Upload_Document\"][\"mimeType\"] }}",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "c494f72e-d52e-421f-822e-0ac3183056ec",
+        "name": "Add Metadata",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -144,
+          640
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "insert",
+          "memoryKey": {
+            "__rl": true,
+            "mode": "id",
+            "value": "knowledge_base"
+          }
+        },
+        "id": "7ca39cd3-f480-40f8-9e63-b6b5a68cfcd6",
+        "name": "Vector Store Insert",
+        "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+        "typeVersion": 1.3,
+        "position": [
+          96,
+          640
+        ]
+      },
+      {
+        "parameters": {
+          "dataType": "binary",
+          "binaryMode": "specificField",
+          "binaryDataKey": "Upload_Document",
+          "textSplittingMode": "custom",
+          "options": {}
+        },
+        "id": "874641fc-033e-4a15-b227-591fa66c67f9",
+        "name": "Document Loader",
+        "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+        "typeVersion": 1.1,
+        "position": [
+          64,
+          832
+        ]
+      },
+      {
+        "parameters": {
+          "chunkOverlap": 200
+        },
+        "id": "c0d87ea2-25ea-4ee5-aa81-2f040efafc45",
+        "name": "Token Splitter",
+        "type": "@n8n/n8n-nodes-langchain.textSplitterTokenSplitter",
+        "typeVersion": 1,
+        "position": [
+          192,
+          1056
+        ]
+      },
+      {
+        "parameters": {
+          "options": {
+            "systemMessage": "You are a helpful AI assistant with access to a knowledge base of uploaded documents. Use the knowledge_base_search tool to find relevant information from the documents to answer user questions accurately. Always cite which document the information came from when possible."
+          }
+        },
+        "id": "9e6ded26-c791-4381-8e99-6593994e7765",
+        "name": "AI Agent",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 2.2,
+        "position": [
+          1152,
+          640
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "retrieve-as-tool",
+          "toolDescription": "Search the knowledge base for information from uploaded documents. Use this to answer questions about the content in PDF, CSV, and JSON files that have been uploaded.",
+          "memoryKey": {
+            "__rl": true,
+            "mode": "id",
+            "value": "knowledge_base"
+          }
+        },
+        "id": "be0de71f-1146-424f-b0b5-78e8e57ca4fe",
+        "name": "Vector Store Retriever",
+        "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+        "typeVersion": 1.3,
+        "position": [
+          1376,
+          864
+        ]
+      },
+      {
+        "parameters": {
+          "model": "llama-3.1-8b-instant",
+          "options": {}
+        },
+        "id": "c584ca4b-4748-4d03-ad30-4591a9ac3424",
+        "name": "Groq Chat Model",
+        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+        "typeVersion": 1,
+        "position": [
+          1168,
+          848
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "62e965f4-f074-4370-98c1-eb2999fef91c",
+        "name": "HuggingFace Embeddings Insert",
+        "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+        "typeVersion": 1,
+        "position": [
+          -128,
+          928
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "92e37173-045e-4fc1-b96f-249a7485beab",
+        "name": "HuggingFace Embeddings Retriever",
+        "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+        "typeVersion": 1,
+        "position": [
+          1312,
+          1056
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"output\": \"={ $json.output }\"}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          1536,
+          608
+        ],
+        "id": "9ae0f340-99c4-4c89-b8c8-6670ca0954f6",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "public": true,
+          "initialMessages": "=Hi there! 👋\nMy name is Hammad. How can I assist you today?",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          768,
+          560
+        ],
+        "id": "fe866abe-ebb4-4547-929d-c319132a8125",
+        "name": "When chat message received",
+        "webhookId": "66219e80-fbed-4664-a11d-4a05167fbad2"
+      }
+    ],
+    "connections": {
+      "File Upload Form": {
+        "main": [
+          [
+            {
+              "node": "Add Metadata",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Add Metadata": {
+        "main": [
+          [
+            {
+              "node": "Vector Store Insert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Document Loader": {
+        "ai_document": [
+          [
+            {
+              "node": "Vector Store Insert",
+              "type": "ai_document",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Token Splitter": {
+        "ai_textSplitter": [
+          [
+            {
+              "node": "Document Loader",
+              "type": "ai_textSplitter",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI Agent": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Vector Store Retriever": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Groq Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HuggingFace Embeddings Insert": {
+        "ai_embedding": [
+          [
+            {
+              "node": "Vector Store Insert",
+              "type": "ai_embedding",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HuggingFace Embeddings Retriever": {
+        "ai_embedding": [
+          [
+            {
+              "node": "Vector Store Retriever",
+              "type": "ai_embedding",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "When chat message received": {
+        "main": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "instanceId": "00c5987eff5ba5abbcd3e4a66313d8570a9fbba90f617d05275abd152fe8fd43"
+    }
+  }
