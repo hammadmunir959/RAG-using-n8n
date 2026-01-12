@@ -28,6 +28,12 @@ class Document(Base):
     status = Column(String, default="uploaded")  # uploaded, processing, processed, error
     meta_data = Column(JSON, default=dict)  # Additional metadata as JSON (renamed from metadata to avoid SQLAlchemy conflict)
     
+    # Summary fields
+    summary = Column(Text, nullable=True)  # Auto-generated document summary
+    summary_status = Column(String, default="pending")  # pending, generating, completed, failed
+    summary_retry_count = Column(Integer, default=0)  # Number of retry attempts
+    summary_error = Column(Text, nullable=True)  # Last error message if failed
+    
     # Relationships
     messages = relationship("Message", back_populates="sources_documents", secondary="message_sources")
 
@@ -282,7 +288,44 @@ def create_message(
         raise
 
 
-def get_messages(db: Session, conversation_id: int) -> List[Message]:
+def get_messages(db: Session, conversation_id: int, limit: int = None) -> List[Message]:
     """Get all messages for a conversation."""
-    return db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at).all()
+    query = db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at)
+    if limit:
+        query = query.limit(limit)
+    return query.all()
 
+
+def update_document_summary(
+    db: Session,
+    document_id: int,
+    summary: Optional[str] = None,
+    summary_status: str = "pending",
+    summary_error: Optional[str] = None,
+    increment_retry: bool = False
+) -> Optional[Document]:
+    """Update document summary fields."""
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc:
+            if summary is not None:
+                doc.summary = summary
+            doc.summary_status = summary_status
+            if summary_error is not None:
+                doc.summary_error = summary_error
+            if increment_retry:
+                doc.summary_retry_count = (doc.summary_retry_count or 0) + 1
+            db.commit()
+            db.refresh(doc)
+        return doc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_documents_pending_summary(db: Session, max_retries: int = 3) -> List[Document]:
+    """Get documents that need summary generation."""
+    return db.query(Document).filter(
+        Document.summary_status.in_(["pending", "failed"]),
+        Document.summary_retry_count < max_retries
+    ).order_by(Document.upload_date.desc()).all()

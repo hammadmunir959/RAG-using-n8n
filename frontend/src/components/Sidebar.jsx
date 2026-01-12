@@ -1,145 +1,136 @@
-import { useState } from 'react'
-import './Sidebar.css'
+import './Sidebar.css';
 
-function Sidebar({
-  documents = [],
-  conversations = [],
-  currentConversationId,
-  onStartNewConversation,
-  onConversationSelect,
-  onUploadClick,
-  onManageDocuments,
-  onDeleteDocument,
+// Minimal SVG Icons
+const Icons = {
+  plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>,
+  chat: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>,
+  file: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" /></svg>,
+  upload: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></svg>,
+  settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>,
+  message: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" /></svg>,
+  trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>,
+};
+
+export default function Sidebar({
+  activeView,
+  onViewChange,
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onNewConversation,
   onDeleteConversation,
+  stats
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
-
   return (
-    <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <button
-          className="toggle-btn"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          aria-label="Toggle sidebar"
-        >
-          {isCollapsed ? '→' : '←'}
-        </button>
-        {!isCollapsed && (
-          <div className="sidebar-title">
-            <h3>Document AI</h3>
-          </div>
-        )}
+    <aside className="sidebar">
+      {/* Brand */}
+      <div className="sidebar-brand">
+        <div className="brand-logo">DI</div>
+        <span className="brand-text">DocIntel</span>
       </div>
 
-      <div className="sidebar-content">
-        {/* Primary Action */}
-        <div className="sidebar-section">
-          {!isCollapsed && <h4 className="section-title">Conversation</h4>}
-          <button className="primary-btn" onClick={onStartNewConversation}>
-            <span className="btn-icon">✨</span>
-            {!isCollapsed && <span>Start new conversation</span>}
+      {/* New Chat */}
+      <div className="sidebar-action">
+        <button className="new-chat-btn" onClick={onNewConversation}>
+          {Icons.plus}
+          <span>New Chat</span>
+        </button>
+      </div>
+
+      {/* Navigation */}
+      <nav className="sidebar-nav">
+        <div className="nav-group">
+          <div className="nav-label">Menu</div>
+
+          <button
+            className={`nav-item ${activeView === 'chat' ? 'active' : ''}`}
+            onClick={() => onViewChange('chat')}
+          >
+            {Icons.chat}
+            <span className="nav-item-text">Chat</span>
+          </button>
+
+          <button
+            className={`nav-item ${activeView === 'documents' ? 'active' : ''}`}
+            onClick={() => onViewChange('documents')}
+          >
+            {Icons.file}
+            <span className="nav-item-text">Documents</span>
+            {stats.documents > 0 && (
+              <span className="nav-badge">{stats.documents}</span>
+            )}
+          </button>
+
+          <button
+            className={`nav-item ${activeView === 'upload' ? 'active' : ''}`}
+            onClick={() => onViewChange('upload')}
+          >
+            {Icons.upload}
+            <span className="nav-item-text">Upload</span>
+          </button>
+
+          <button
+            className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
+            onClick={() => onViewChange('settings')}
+          >
+            {Icons.settings}
+            <span className="nav-item-text">Settings</span>
           </button>
         </div>
+      </nav>
 
-        {/* Documents */}
-        <div className="sidebar-section">
-          <div className="section-header">
-            {!isCollapsed && <h4>Documents</h4>}
-            {!isCollapsed && <span className="file-count">{documents.length}</span>}
-          </div>
-          <div className="docs-actions">
-            <button className="nav-item" onClick={onUploadClick}>
-              <span className="nav-icon">📤</span>
-              {!isCollapsed && <span className="nav-text">Upload</span>}
-            </button>
-            <button className="nav-item" onClick={onManageDocuments}>
-              <span className="nav-icon">📁</span>
-              {!isCollapsed && <span className="nav-text">Manage</span>}
-            </button>
-          </div>
-          {!isCollapsed && (
-            <div className="files-list compact">
-              {documents.slice(0, 6).map((doc) => (
-                <div key={doc.id} className="file-item">
-                  <span className="file-icon">📄</span>
-                  <div className="file-info">
-                    <span className="file-name" title={doc.filename}>
-                      {doc.filename.length > 26 ? `${doc.filename.substring(0, 26)}...` : doc.filename}
-                    </span>
-                  </div>
-                  {onDeleteDocument && (
-                    <button
-                      className="item-action-btn"
-                      title="Delete document"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDeleteDocument(doc.id)
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-              {documents.length === 0 && (
-                <div className="empty-row">No documents yet</div>
-              )}
-            </div>
-          )}
+      {/* Conversations */}
+      <div className="sidebar-conversations">
+        <div className="conversations-header">
+          <span className="conversations-title">History</span>
+          <span className="conversations-count">{conversations.length}</span>
         </div>
 
-        {/* Conversations */}
-        <div className="sidebar-section">
-          <div className="section-header">
-            {!isCollapsed && <h4>Conversations</h4>}
-            {!isCollapsed && <span className="file-count">{conversations.length}</span>}
-          </div>
-          <div className="conversations-list compact">
-            {conversations.length === 0 && !isCollapsed && (
-              <div className="empty-row">No conversations yet</div>
-            )}
-            {conversations.map((conv) => (
+        <div className="conversations-list">
+          {conversations.length === 0 ? (
+            <div className="conversations-empty">No conversations yet</div>
+          ) : (
+            conversations.map(conv => (
               <button
                 key={conv.id}
-                className={`conversation-chip ${currentConversationId === conv.id ? 'active' : ''}`}
-                onClick={() => onConversationSelect(conv.id)}
-                title={conv.title || 'Untitled conversation'}
+                className={`conversation-item ${activeConversationId === conv.id ? 'active' : ''}`}
+                onClick={() => onSelectConversation(conv.id)}
               >
-                <span className="chip-title">
-                  {(conv.title || 'Untitled').length > 24
-                    ? `${(conv.title || 'Untitled').substring(0, 24)}...`
-                    : conv.title || 'Untitled'}
-                </span>
-                <span className="chip-meta">{conv.message_count || 0} msgs</span>
-                {onDeleteConversation && (
-                  <span
-                    className="chip-delete"
-                    title="Delete conversation"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteConversation(conv.id)
-                    }}
-                  >
-                    ✕
-                  </span>
-                )}
+                <span className="conversation-icon">{Icons.message}</span>
+                <span className="conversation-title">{conv.title || 'Untitled'}</span>
+                <button
+                  className="conversation-delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteConversation(conv.id);
+                  }}
+                  title="Delete"
+                >
+                  {Icons.trash}
+                </button>
               </button>
-            ))}
-          </div>
+            ))
+          )}
         </div>
       </div>
 
+      {/* Footer Stats */}
       <div className="sidebar-footer">
-        {!isCollapsed && (
-          <div className="footer-content">
-            <p className="footer-text">
-              Chat with your documents in one place. Upload, manage, and continue conversations seamlessly.
-            </p>
+        <div className="sidebar-stats">
+          <div className="stat-item">
+            <div className="stat-value">{stats.documents}</div>
+            <div className="stat-label">Docs</div>
           </div>
-        )}
+          <div className="stat-item">
+            <div className="stat-value">{stats.conversations}</div>
+            <div className="stat-label">Chats</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-value">{stats.messages}</div>
+            <div className="stat-label">Msgs</div>
+          </div>
+        </div>
       </div>
-    </div>
-  )
+    </aside>
+  );
 }
-
-export default Sidebar

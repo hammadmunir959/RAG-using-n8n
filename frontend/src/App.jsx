@@ -1,143 +1,157 @@
-import { useState, useEffect, useCallback } from 'react'
-import axios from 'axios'
-import Sidebar from './components/Sidebar'
-import UploadPage from './components/UploadPage'
-import ChatPage from './components/ChatPage'
-import DocumentManager from './components/DocumentManager'
-import './App.css'
+import { useState, useEffect, useCallback } from 'react';
+import './App.css';
+import Sidebar from './components/Sidebar';
+import ChatView from './components/ChatView';
+import DocumentsView from './components/DocumentsView';
+import UploadView from './components/UploadView';
+import SettingsView from './components/SettingsView';
 
 function App() {
-  const [uploadedFiles, setUploadedFiles] = useState([])
-  const [documents, setDocuments] = useState([])
-  const [conversations, setConversations] = useState([])
-  const [currentConversationId, setCurrentConversationId] = useState(null)
-  const [showUploadModal, setShowUploadModal] = useState(false)
-  const [showDocumentsModal, setShowDocumentsModal] = useState(false)
+  const [view, setView] = useState('chat');
+  const [documents, setDocuments] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({ documents: 0, conversations: 0, messages: 0 });
 
-  const fetchDocuments = useCallback(async () => {
+  // Fetch all data
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const response = await axios.get('/api/documents')
-      if (response.data.success) {
-        setDocuments(response.data.documents || [])
+      const [docsRes, convsRes] = await Promise.all([
+        fetch('/api/documents'),
+        fetch('/api/conversations')
+      ]);
+
+      const docsData = await docsRes.json();
+      const convsData = await convsRes.json();
+
+      if (docsData.success) {
+        setDocuments(docsData.documents || []);
+      }
+      if (convsData.success) {
+        setConversations(convsData.conversations || []);
+        // Calculate total messages
+        const totalMessages = (convsData.conversations || []).reduce(
+          (sum, c) => sum + (c.message_count || 0), 0
+        );
+        setStats({
+          documents: docsData.documents?.length || 0,
+          conversations: convsData.conversations?.length || 0,
+          messages: totalMessages
+        });
       }
     } catch (error) {
-      console.error('Error fetching documents:', error)
+      console.error('Failed to fetch data:', error);
     }
-  }, [])
-
-  const fetchConversations = useCallback(async () => {
-    try {
-      const response = await axios.get('/api/conversations')
-      if (response.data.success) {
-        setConversations(response.data.conversations || [])
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error)
-    }
-  }, [])
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
-    fetchDocuments()
-    fetchConversations()
-  }, [fetchDocuments, fetchConversations])
+    fetchData();
+  }, [fetchData]);
 
-  const handleNewConversation = () => {
-    setCurrentConversationId(null)
-  }
-
-  const handleConversationSelect = (conversationId) => {
-    setCurrentConversationId(conversationId)
-  }
-
-  const handleConversationChange = (conversationId) => {
-    setCurrentConversationId(conversationId)
-    fetchConversations()
-  }
-
-  const handleUploadSuccess = (filenames) => {
-    const fileArray = Array.isArray(filenames) ? filenames : [filenames]
-    setUploadedFiles(prev => [...prev, ...fileArray])
-    setShowUploadModal(false)
-    fetchDocuments()
-  }
-
-  const handleDeleteDocument = async (documentId) => {
-    if (!documentId) return
-    const confirmed = window.confirm('Delete this document?')
-    if (!confirmed) return
+  // Document actions
+  const deleteDocument = async (id) => {
     try {
-      await axios.delete(`/api/documents/${documentId}`)
-      fetchDocuments()
-    } catch (error) {
-      console.error('Error deleting document:', error)
-    }
-  }
-
-  const handleDeleteConversation = async (conversationId) => {
-    if (!conversationId) return
-    const confirmed = window.confirm('Delete this conversation?')
-    if (!confirmed) return
-    try {
-      await axios.delete(`/api/conversations/${conversationId}`)
-      if (currentConversationId === conversationId) {
-        setCurrentConversationId(null)
+      const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDocuments(prev => prev.filter(d => d.id !== id));
+        setStats(prev => ({ ...prev, documents: prev.documents - 1 }));
       }
-      fetchConversations()
     } catch (error) {
-      console.error('Error deleting conversation:', error)
+      console.error('Delete failed:', error);
     }
-  }
+  };
+
+  // Conversation actions
+  const createConversation = () => {
+    setActiveConversationId(null);
+    setView('chat');
+  };
+
+  const selectConversation = (id) => {
+    setActiveConversationId(id);
+    setView('chat');
+  };
+
+  const deleteConversation = async (id) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setConversations(prev => prev.filter(c => c.id !== id));
+        if (activeConversationId === id) {
+          setActiveConversationId(null);
+        }
+        setStats(prev => ({ ...prev, conversations: prev.conversations - 1 }));
+      }
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+  };
+
+  const onConversationCreated = (id) => {
+    setActiveConversationId(id);
+    fetchData(); // Refresh to get new conversation
+  };
+
+  const onUploadComplete = () => {
+    fetchData();
+    setView('documents');
+  };
+
+  // Render view
+  const renderView = () => {
+    switch (view) {
+      case 'chat':
+        return (
+          <ChatView
+            conversationId={activeConversationId}
+            onConversationCreated={onConversationCreated}
+            documentsCount={documents.length}
+          />
+        );
+      case 'documents':
+        return (
+          <DocumentsView
+            documents={documents}
+            onDelete={deleteDocument}
+            onRefresh={fetchData}
+            isLoading={isLoading}
+            onUploadClick={() => setView('upload')}
+          />
+        );
+      case 'upload':
+        return (
+          <UploadView
+            onComplete={onUploadComplete}
+            onCancel={() => setView('documents')}
+          />
+        );
+      case 'settings':
+        return <SettingsView stats={stats} />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="app">
       <Sidebar
-        documents={documents}
+        activeView={view}
+        onViewChange={setView}
         conversations={conversations}
-        onStartNewConversation={handleNewConversation}
-        onConversationSelect={handleConversationSelect}
-        currentConversationId={currentConversationId}
-        onUploadClick={() => setShowUploadModal(true)}
-        onManageDocuments={() => setShowDocumentsModal(true)}
-        onDeleteDocument={handleDeleteDocument}
-        onDeleteConversation={handleDeleteConversation}
+        activeConversationId={activeConversationId}
+        onSelectConversation={selectConversation}
+        onNewConversation={createConversation}
+        onDeleteConversation={deleteConversation}
+        stats={stats}
       />
-
-      <main className="main-content">
-        <ChatPage
-          uploadedFiles={uploadedFiles}
-          conversationId={currentConversationId}
-          onConversationChange={handleConversationChange}
-        />
+      <main className="app-main">
+        {renderView()}
       </main>
-
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="modal-backdrop" onClick={() => setShowUploadModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Upload Documents</h3>
-              <button className="modal-close" onClick={() => setShowUploadModal(false)}>✕</button>
-            </div>
-            <UploadPage onUploadSuccess={handleUploadSuccess} />
-          </div>
-        </div>
-      )}
-
-      {/* Documents Modal */}
-      {showDocumentsModal && (
-        <div className="modal-backdrop" onClick={() => setShowDocumentsModal(false)}>
-          <div className="modal-container wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Documents</h3>
-              <button className="modal-close" onClick={() => setShowDocumentsModal(false)}>✕</button>
-            </div>
-            <DocumentManager />
-          </div>
-        </div>
-      )}
     </div>
-  )
+  );
 }
 
-export default App
-
+export default App;
