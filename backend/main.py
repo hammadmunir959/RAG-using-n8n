@@ -12,6 +12,8 @@ from typing import Optional, List, Tuple
 from pydantic import BaseModel
 import logging
 import json
+import subprocess
+import time
 from sqlalchemy.orm import Session
 from database import (
     init_db, get_db, cleanup_db, create_document, get_document, get_documents, delete_document,
@@ -1155,20 +1157,33 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             if "id" in source:
                                 source_ids.append(source["id"])
                             elif "filename" in source:
-                                # Loose matching for filename (checking if one contains the other)
+                                # Loose matching for filename
                                 src_name = source["filename"]
+                                found = False
+                                
+                                # Exact match
                                 if src_name in filename_to_id:
                                     source_ids.append(filename_to_id[src_name])
+                                    found = True
                                 else:
-                                    # Try partial match (case insensitive)
+                                    # Partial match
                                     for db_name, db_id in filename_to_id.items():
                                         if src_name.lower() in db_name.lower() or db_name.lower() in src_name.lower():
                                             source_ids.append(db_id)
+                                            found = True
                                             break
+                                
+                                # If NOT found in DB (e.g. Web Search), keep as dict so it's saved in JSON
+                                if not found:
+                                    source_ids.append(source)
+                            else:
+                                source_ids.append(source)
                         elif isinstance(source, int):
                             source_ids.append(source)
                 except Exception as e:
                     logger.warning(f"Error mapping sources to IDs: {e}")
+                    # Fallback: just pass what we have
+                    source_ids.extend(sources)
             
             # Store assistant message
             assistant_message = create_message(
@@ -1400,3 +1415,96 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
 
+# ==========================================
+# CRAWLER ENDPOINTS
+# ==========================================
+
+class CrawlRequest(BaseModel):
+    url: str
+    depth: int = 1
+
+class IngestRequest(BaseModel):
+    url: str
+    title: str
+    text: str
+
+@app.post("/api/crawl")
+async def start_crawl(request: CrawlRequest):
+    """
+    Trigger a background Scrapy crawl for the given URL.
+    """
+    logger.info(f"🕸️ [CRAWL] Starting crawl for: {request.url} (Depth: {request.depth})")
+    
+    # Validate URL
+    try:
+        from urllib.parse import urlparse
+        domain = urlparse(request.url).netloc
+        if not domain:
+            raise ValueError("Invalid URL")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+        
+    # Command to run Scrapy
+    # We use 'scrapy crawl universal' and pass arguments via -a
+    cmd = [
+        "scrapy", "crawl", "universal",
+        "-a", f"start_url={request.url}",
+        "-a", f"allowed_domains={domain}",
+        "-a", f"max_depth={request.depth}"
+    ]
+    
+    # Run as subprocess
+    try:
+        # We don't wait for it to finish (async fire-and-forget from HTTP perspective)
+        # But we verify it starts
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=os.path.dirname(os.path.abspath(__file__)) # Run in backend dir where scrapy.cfg is?
+            # Actually scrapy.cfg is at backend/scrapy.cfg? No wait.
+            # 'scrapy startproject crawler .' created scrapy.cfg in backend/
+        )
+        
+        return {
+            "status": "started",
+            "pid": process.pid,
+            "message": f"Crawler started for {request.url}"
+        }
+    except Exception as e:
+        logger.error(f"Failed to start crawler: {e}")
+        raise HTTPException(status_code=500, detail=f"Crawler start failed: {str(e)}")
+
+@app.post("/api/internal/ingest")
+async def ingest_crawled_content(request: IngestRequest):
+    """
+    Internal endpoint for the crawler to push data back to the system.
+    """
+    logger.info(f"📥 [INGEST] Received content from: {request.title} ({request.url})")
+    
+    # Process text into chunks
+    if not request.text.strip():
+        return {"status": "ignored", "reason": "empty_text"}
+        
+    doc_id = int(time.time()) # Simple ID generation
+    
+    # Add to vector store
+    store = get_vector_store()
+    
+    # VectorStore.add_document expects bytes content and handles chunking internally
+    # We pretend it's a TXT file so the extractor works simply
+    filename = f"{request.title}.txt"
+    content_bytes = request.text.encode('utf-8')
+    
+    # Note: add_document is async
+    try:
+        count = await store.add_document(
+            doc_id=doc_id,
+            filename=filename,
+            content=content_bytes
+        )
+    except Exception as e:
+        logger.error(f"Failed to add crawled document: {e}")
+        return {"status": "error", "message": str(e)}
+    
+    return {"status": "indexed", "chunks": count}

@@ -216,12 +216,23 @@ export default function ChatView({ conversationId, onConversationCreated, docume
                                             <div className="message-sources">
                                                 <div className="sources-header">Sources</div>
                                                 <div className="sources-tags">
-                                                    {msg.sources.map((s, i) => (
-                                                        <span key={i} className="source-tag">
-                                                            {Icons.file}
-                                                            {s.filename || `Doc ${s.id}`}
-                                                        </span>
-                                                    ))}
+                                                    {msg.sources.map((s, i) => {
+                                                        const isLink = !!s.url;
+                                                        const Tag = isLink ? 'a' : 'span';
+                                                        const props = isLink ? { href: s.url, target: '_blank', rel: 'noopener noreferrer' } : {};
+
+                                                        return (
+                                                            <Tag key={i} className={`source-tag ${isLink ? 'source-link' : ''}`} {...props}>
+                                                                {isLink ? (
+                                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px', width: '14px', height: '14px' }}>
+                                                                        <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                                                                        <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                                                                    </svg>
+                                                                ) : Icons.file}
+                                                                {s.filename || `Doc ${s.id}`}
+                                                            </Tag>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}

@@ -49,8 +49,7 @@ def create_document_retriever_tool(vector_store: VectorStore):
     
     @tool
     def retrieve_documents(query: str) -> str:
-        """
-        Search uploaded documents for relevant information.
+        """Search the uploaded documents for relevant information.
         Use this tool when you need to find information from the user's documents.
         
         Args:
@@ -59,8 +58,15 @@ def create_document_retriever_tool(vector_store: VectorStore):
         Returns:
             Relevant text excerpts from documents
         """
+        logger.info(f"📄 [DOC SEARCH] Query: '{query}'")
+        # The vector_store parameter passed to create_document_retriever_tool is not used here
+        # as get_vector_store() is called directly inside the tool.
+        # This ensures the tool can be used independently if needed.
+        current_vector_store = get_vector_store() 
         try:
-            results = vector_store.search(query, k=5, score_threshold=0.2)
+            results = current_vector_store.search(query, k=5, score_threshold=0.2)
+            
+            logger.info(f"📄 [DOC SEARCH] Found {len(results)} chunks")
             
             if not results:
                 return "No relevant information found in the uploaded documents."
@@ -78,6 +84,7 @@ def create_document_retriever_tool(vector_store: VectorStore):
                 if len(text) > 500:
                     text = text[:500] + "..."
                 
+                logger.info(f"   Chunk {i}: {text[:100]}... (File: {filename})")
                 formatted.append(f"[Source {i}: {filename} (relevance: {score:.2f})]\n{text}")
                 seen_files.add(filename)
             
@@ -88,7 +95,39 @@ def create_document_retriever_tool(vector_store: VectorStore):
             logger.error(f"Error in document retrieval: {e}")
             return f"Error searching documents: {str(e)}"
     
-    return retrieve_documents
+    @tool
+    def crawl_website(url: str):
+        """
+        Crawl a website to learn comprehensive information from it.
+        Use this when you need to read documentation or explore a site deeper than a single page.
+        
+        Args:
+            url: The URL to start crawling from (e.g., 'https://docs.python.org/3/')
+        """
+        logger.info(f"🕷️ [AGENT-CRAWL] Requesting crawl for: {url}")
+        
+        # Call local API to trigger crawl
+        # We use httpx to hit our own endpoint
+        # The agent is running in the same process/loop, so we can't block easily?
+        # Actually agent runs in main.py loop context probably?
+        # We should use sync requests here inside the tool thread or async?
+        # LangGraph tools are sync by default in this implementation unless using async tools
+        
+        try:
+            # We assume the API runs on localhost:8000
+            import requests
+            api_url = "http://localhost:8000/api/crawl"
+            response = requests.post(api_url, json={"url": url, "depth": 1}, timeout=5)
+            
+            if response.status_code == 200:
+                return f"Started crawling {url}. The information will be available in the 'retrieve_documents' tool shortly. Please wait a moment and then use retrieve_documents to find what you need."
+            else:
+                return f"Failed to start crawl: Status {response.status_code}"
+                
+        except Exception as e:
+            return f"Error triggering crawl: {e}"
+
+    return retrieve_documents, crawl_website
 
 
 def create_web_search_tool():
@@ -117,43 +156,104 @@ def create_web_search_tool():
             from urllib.parse import quote
             from bs4 import BeautifulSoup
             
-            # Use Google search via ScrapingAnt
-            search_url = f"https://www.google.com/search?q={quote(query)}"
+            # Use DuckDuckGo HTML search via ScrapingAnt (works with Free Tier)
+            # Google is often blocked on free plans
+            logger.info(f"🔍 [WEB SEARCH] Query: '{query}'")
+            search_url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
             api_url = f"https://api.scrapingant.com/v2/general?url={quote(search_url, safe='')}&x-api-key={SCRAPER_API_KEY}&browser=false"
             
             with httpx.Client(timeout=30.0) as client:
                 response = client.get(api_url)
                 
                 if response.status_code != 200:
+                    logger.error(f"❌ [WEB SEARCH] API Failed: Status {response.status_code}")
                     return f"Web search failed with status {response.status_code}"
                 
+                logger.info(f"✅ [WEB SEARCH] API Response {response.status_code} - Parsing results...")
                 soup = BeautifulSoup(response.text, 'lxml')
                 
-                # Extract search result snippets
-                results = []
+            # Extract search result snippets
+            results = []
+            
+            # Selector for DuckDuckGo HTML
+            # Structure: div.result -> h2.result__title -> a.result__a (href=uddg=...)
+            
+            from urllib.parse import unquote, parse_qs, urlparse
+
+            processed_sources = []
+            
+            try:
+                # Find all result containers
+                result_divs = soup.select("div.result")
                 
-                # Try different Google result selectors
-                for selector in ['div.BNeawe', 'div.VwiC3b', 'span.aCOpRe', 'div.s']:
+                # If structure matches DDG
+                if result_divs:
+                    for div in result_divs[:5]:
+                        # Title & Link
+                        title_tag = div.select_one(".result__title .result__a")
+                        if not title_tag: 
+                            continue
+                            
+                        title = title_tag.get_text(strip=True)
+                        raw_href = title_tag.get('href', '')
+                        
+                        # Extract real URL from DDG redirect
+                        real_url = raw_href
+                        if "duckduckgo.com/l/" in raw_href:
+                            try:
+                                parsed = urlparse(raw_href)
+                                qs = parse_qs(parsed.query)
+                                if 'uddg' in qs:
+                                    real_url = qs['uddg'][0]
+                            except Exception:
+                                pass
+                        
+                        # Snippet
+                        snippet_tag = div.select_one(".result__snippet")
+                        snippet = snippet_tag.get_text(strip=True) if snippet_tag else "No details available."
+                        
+                        if len(snippet) > 20:
+                            processed_sources.append({
+                                "title": title,
+                                "url": real_url,
+                                "snippet": snippet
+                            })
+                            results.append(snippet)
+            except Exception as e:
+                logger.error(f"Error parsing DDG structure: {e}")
+                
+            # Fallback (Google generic selectors) if strict structure fails
+            if not processed_sources:
+                 for selector in ['div.BNeawe', 'div.VwiC3b', 'span.aCOpRe']:
+                    if processed_sources: break
                     for div in soup.select(selector)[:5]:
                         text = div.get_text(strip=True)
                         if text and len(text) > 50:
+                            processed_sources.append({
+                                "title": "Web Result",
+                                "url": "", 
+                                "snippet": text
+                            })
                             results.append(text)
-                    if results:
-                        break
+                            
+            logger.info(f"📉 [WEB SEARCH] Found {len(processed_sources)} results")
+            
+            # Format results with source tags
+            # Format: [Source: Title | URL]
+            formatted_text = "Web search results:\n\n"
+            
+            for i, src in enumerate(processed_sources, 1):
+                clean_title = src['title'].replace('|', '-').replace(']', ')')
+                clean_url = src['url']
+                # If no URL, fallback to Result N
+                source_tag = f"{clean_title} | {clean_url}" if clean_url else f"Web Search Result {i}"
                 
-                # Fallback: get any substantial text
-                if not results:
-                    for p in soup.find_all(['p', 'span', 'div'])[:20]:
-                        text = p.get_text(strip=True)
-                        if text and len(text) > 100:
-                            results.append(text[:500])
-                            if len(results) >= 3:
-                                break
-                
-                if results:
-                    return "Web search results:\n\n" + "\n\n".join(results[:3])
-                else:
-                    return "No useful results found from web search."
+                formatted_text += f"[Source: {source_tag}]\n{src['snippet']}\n\n"
+            
+            if processed_sources:
+                return formatted_text
+            else:
+                return "No useful results found from web search."
                     
         except Exception as e:
             logger.error(f"Web search error: {e}")
@@ -187,8 +287,9 @@ def create_react_agent(vector_store: VectorStore) -> StateGraph:
     """
     
     # Create tools
-    doc_tool = create_document_retriever_tool(vector_store)
-    tools = [doc_tool]
+    # Now returns tuple: (retrieve_documents, crawl_website)
+    doc_tool, crawl_tool = create_document_retriever_tool(vector_store)
+    tools = [doc_tool, crawl_tool]
     
     # Add web search if configured
     if SCRAPER_API_KEY:
@@ -200,21 +301,21 @@ def create_react_agent(vector_store: VectorStore) -> StateGraph:
     llm_with_tools = llm.bind_tools(tools)
     
     # System prompt
-    system_prompt = """You are an intelligent document assistant. Your role is to help users understand and query their uploaded documents.
+    system_prompt = """You are an intelligent assistant capable of document analysis, web search, and WEBSITE CRAWLING.
 
 Guidelines:
-1. ALWAYS search the documents first using the retrieve_documents tool before answering questions
-2. Base your answers on the document content when available
-3. If documents don't contain the answer, clearly state that
-4. Cite your sources by mentioning the document names
-5. Be concise but thorough in your responses
-6. If web search is available and documents don't help, you may search the web
+1. ALWAYS attempts to search the documents first using retrieve_documents.
+2. If the user asks to "crawl", "learn", "study", or "read" a website/documentation, use the `crawl_website` tool.
+   - After triggering a crawl, inform the user you have started the process and they should wait a moment before searching the new content.
+3. If documents lack info, USE `search_web` for quick facts/news.
+4. Use `retrieve_documents` to find information from both user uploads AND previously crawled sites.
+5. Combine information from all sources.
 
 When responding:
-- Start with a direct answer to the question
-- Support your answer with relevant quotes or references from documents
-- If multiple documents are relevant, synthesize the information
-- Be honest about what the documents do and don't contain"""
+- Start with a direct, detailed answer based on the facts found.
+- Do NOT just say "The information is available on..." or "Sources include...".
+- ACTUALLY summarized the content.
+- Mention source types ("Uploaded Documents", "Crawled Content", "Web Search") only as a citation at the end."""
     
     def should_continue(state: AgentState) -> str:
         """Determine if we should continue to tools or end."""
@@ -246,35 +347,50 @@ When responding:
         
         for msg in state["messages"]:
             if hasattr(msg, 'content') and isinstance(msg.content, str):
-                # Search for source markers in the content
-                # Format: [Source N: filename.pdf (relevance: X.XX)]
                 content = msg.content
                 if "[Source" in content:
                     lines = content.split('\n')
                     for line in lines:
                         line = line.strip()
-                        if line.startswith("[Source") and "(relevance:" in line:
-                            try:
-                                # Parse: [Source 1: filename.pdf (relevance: 0.85)]
-                                # 1. Remove [Source and ]
-                                inner = line[1:-1] # Source 1: filename.pdf (relevance: 0.85)
-                                # 2. Split by first colon to get content
-                                if ":" in inner:
-                                    _, file_part = inner.split(":", 1)
-                                    # file_part = " filename.pdf (relevance: 0.85)"
-                                    # 3. Split by (relevance to separate filename
-                                    if "(relevance" in file_part:
-                                        filename = file_part.split("(relevance")[0].strip()
-                                        sources.append({"filename": filename})
-                            except Exception as e:
-                                logger.warning(f"Failed to parse source line: {line} - {e}")
+                        if line.startswith("[Source"):
+                            # Handle Document Source
+                            if "(relevance:" in line:
+                                try:
+                                    inner = line[1:-1]
+                                    if ":" in inner:
+                                        _, file_part = inner.split(":", 1)
+                                        if "(relevance" in file_part:
+                                            filename = file_part.split("(relevance")[0].strip()
+                                            sources.append({"filename": filename, "type": "document"})
+                                except Exception:
+                                    pass
+                            
+                            # Handle Web Source: [Source: Title | URL]
+                            elif "|" in line:
+                                try:
+                                    # [Source: Title | URL]
+                                    inner = line[8:-1] # Remove [Source: and ]
+                                    if "|" in inner:
+                                        title, url = inner.split("|", 1)
+                                        sources.append({
+                                            "filename": title.strip(), 
+                                            "url": url.strip(), 
+                                            "type": "web"
+                                        })
+                                except Exception:
+                                    pass
+                            
+                            # Fallback Web Source
+                            elif "Web Search" in line:
+                                sources.append({"filename": "Web Search", "type": "web"})
         
         # Deduplicate
         unique_sources = []
         seen = set()
         for s in sources:
-            if s.get("filename") and s["filename"] not in seen:
-                seen.add(s["filename"])
+            key = s.get("url") or s.get("filename")
+            if key and key not in seen:
+                seen.add(key)
                 unique_sources.append(s)
         
         return {"sources": unique_sources}
@@ -332,9 +448,12 @@ async def run_agent(
         
         # Check if we have any documents
         stats = vector_store.get_stats()
-        if stats.get("total_chunks", 0) == 0:
+        has_documents = stats.get("total_chunks", 0) > 0
+        
+        # If no documents AND no web search, then we can't do anything
+        if not has_documents and not SCRAPER_API_KEY:
             return AgentResult(
-                content="No documents have been uploaded yet. Please upload some documents first, and I'll be able to help you analyze them.",
+                content="No documents have been uploaded yet, and web search is not configured. Please upload some documents first.",
                 sources=[]
             )
         

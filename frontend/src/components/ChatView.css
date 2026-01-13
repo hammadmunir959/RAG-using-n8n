@@ -219,6 +219,18 @@
     height: 12px;
 }
 
+.source-link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.source-link:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+
 /* ===== Message Timestamp ===== */
 .message-time {
     margin-top: var(--space-1);

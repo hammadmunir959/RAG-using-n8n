@@ -251,17 +251,32 @@ def create_message(
 ) -> Message:
     """Create a new message."""
     try:
+        # Separate DB IDs from metadata sources
+        db_source_ids = []
+        all_sources_json = []
+        
+        if sources:
+            for s in sources:
+                if isinstance(s, int):
+                    db_source_ids.append(s)
+                    all_sources_json.append({"id": s, "type": "document"})
+                elif isinstance(s, dict):
+                    all_sources_json.append(s)
+                    # If dict has ID, also track it for relation
+                    if "id" in s and isinstance(s["id"], int):
+                        db_source_ids.append(s["id"])
+        
         message = Message(
             conversation_id=conversation_id,
             role=role,
             content=content,
-            sources=sources or []
+            sources=all_sources_json  # Save full metadata to JSON column
         )
         db.add(message)
         
-        # Link to source documents if provided
-        if sources:
-            for doc_id in sources:
+        # Link to source documents if provided (only for valid DB IDs)
+        if db_source_ids:
+            for doc_id in db_source_ids:
                 doc = get_document(db, doc_id)
                 if doc:
                     message.sources_documents.append(doc)

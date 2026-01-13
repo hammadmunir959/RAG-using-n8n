@@ -11,6 +11,7 @@ Built with **React (Frontend)**, **FastAPI (Backend)**, **LangGraph (AI Agent)**
   - **Fallback**: n8n Webhooks for redundancy and complex workflow orchestration.
 - **📄 Universal Document Support**: Upload and analyze PDF, CSV, JSON, DOCX, and TXT files.
 - **🔍 Intelligent RAG**: Automatically chunks, embeds, and indexes documents for context-aware Q&A.
+- **🕷️ Self-Learning Crawler**: The Agent can "read" entire websites on demand to learn new information using an integrated Scrapy engine.
 - **🌐 Web Search Capability**: The agent can search the web (via ScrapingAnt) if the answer isn't in your documents.
 - **🎨 Modern UI**: Beautiful React interface with drag-and-drop upload, real-time chat, and markdown rendering.
 
@@ -25,6 +26,10 @@ graph LR
     Router -- Primary Path --> LangGraph[LangGraph Agent]
     LangGraph --> Chroma[ChromaDB (Local Vector Store)]
     LangGraph --> Groq[Groq API (Llama 3)]
+    
+    LangGraph -- Tool Call --> CrawlerAPI[Crawler API]
+    CrawlerAPI --> Scrapy[Scrapy Subprocess]
+    Scrapy -- Ingest Data --> Chroma
     
     Router -- Fallback/Error --> N8N[n8n Workflows]
     N8N --> CloudAI[Cloud AI Services]
@@ -103,6 +108,13 @@ docker compose up -d
    - It sends the payload to your n8n webhook.
    - n8n executes its own RAG workflow.
    - **Benefit**: Robustness. The system never fails even if one part goes down.
+
+### 🕷️ The "Sidecar" Crawler System
+The system features a unique **Self-Learning** capability:
+1. **Instruction**: You tell the agent "Crawl https://docs.example.com".
+2. **Execution**: The Agent uses its `crawl_website` tool to trigger the Scrapy subsystem.
+3. **Ingestion**: Scrapy runs as a safe, isolated background process. It crawls the site, extracts text, and **pushes it back** into the system's Vector Store (ChromaDB) via an internal API.
+4. **Learning**: Once finished, the Agent can immediately answer questions about that website using its `retrieve_documents` tool, effectively "learning" the content on the fly.
 
 ## 🧩 API Endpoints
 
